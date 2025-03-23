@@ -1,5 +1,4 @@
 from .base_agent import BaseAgent
-from .prompt_agent import PromptAgent
 from .triage_agent import TriageAgent
 from .research_agent import ResearchAgent
 from .debug_agent import DebugAgent

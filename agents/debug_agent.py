@@ -1,176 +1,67 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .base_agent import BaseAgent
-from processors.log_analyzer import LogAnalyzer
 import os
+
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class DebugAgent(BaseAgent):
     """Agent responsible for analyzing logs, identifying errors, and suggesting solutions."""
     
-    def __init__(self):
-        system_message = """You are a Debug Agent responsible for:
-        1. Analyzing log files to identify errors and issues
-        2. Tracing through nested log entries
-        3. Identifying patterns in errors
-        4. Suggesting potential solutions
-        5. Providing context for identified issues
-        """
+    def __init__(self,
+        model_client: Optional[OpenAIChatCompletionClient],
+        handoffs: List[str],
+    ):
         
         super().__init__(
             name="Debugger",
-            system_message=system_message
+            model_client=model_client,
+            handoffs=handoffs,
+            system_message="""
+                You are the **System Troubleshooter Agent**. Your role is to analyze logs, trace errors, and suggest fixes.
+
+                **Policies**:
+                1. Prioritize errors in this order: CRITICAL/FATAL > ERROR > WARNING.
+                2. For nested logs (errors pointing to other logs), recursively analyze linked files.
+                3. Always cross-reference errors with known solutions from the knowledge base.
+
+                **Steps**:
+                1. Receive the log file path (e.g., `/logs/server.log`).
+                2. Parse errors using `_analyze_log(file_path)`.
+                3. For nested logs, call `_analyze_log(new_file_path)`.
+                4. Match errors to solutions using `search_knowledge_base(error_code)`.
+                5. Propose fixes (e.g., "Restart service X" or "Update config Y").
+
+                **Notes**:
+                - If an error is unknown, call `escalate_to_human`.
+                - Use `validate_solution_with_test` before finalizing responses.
+            """,
+            tools=[
+                self._analyze_log,   
+            ]
         )
         
-        self.log_analyzer = LogAnalyzer()
-        self.max_depth = int(os.getenv("MAX_LOG_DEPTH", "5"))
-        
-    def process_message(self, message: str) -> Dict[str, Any]:
-        """Process a log analysis request.
-        
-        Args:
-            message: The analysis request
-            
-        Returns:
-            Dict containing analysis results and suggestions
-        """
-        # Parse the analysis request
-        analysis_params = self._parse_request(message)
-        
-        # Analyze logs
-        log_analysis = self._analyze_logs(analysis_params)
-        
-        # Generate solutions
-        solutions = self._generate_solutions(log_analysis)
-        
-        return {
-            "request": message,
-            "analysis": log_analysis,
-            "solutions": solutions,
-            "summary": self._generate_summary(log_analysis, solutions)
-        }
-        
-    def _parse_request(self, message: str) -> Dict[str, Any]:
-        """Parse the analysis request to extract parameters.
-        
-        Args:
-            message: The analysis request
-            
-        Returns:
-            Dict containing analysis parameters
-        """
-        # Extract time range if specified
-        time_range = None
-        if "last week" in message.lower():
-            time_range = "1w"
-        elif "last day" in message.lower():
-            time_range = "1d"
-        elif "last hour" in message.lower():
-            time_range = "1h"
-            
-        # Extract error types to focus on
-        error_focus = []
-        if "error" in message.lower():
-            error_focus.append("ERROR")
-        if "warning" in message.lower():
-            error_focus.append("WARN")
-            
-        return {
-            "time_range": time_range,
-            "error_focus": error_focus or ["ERROR", "WARN", "INFO"],
-            "max_depth": self.max_depth
-        }
-        
-    def _analyze_logs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_log(self, file_path: str) -> str:
         """Analyze logs based on the specified parameters.
         
         Args:
-            params: Analysis parameters
+            file_path: Path to the log file
             
         Returns:
-            Dict containing analysis results
+            strings containing the file content
         """
-        return self.log_analyzer.analyze(
-            time_range=params["time_range"],
-            error_types=params["error_focus"],
-            max_depth=params["max_depth"]
-        )
+        if not os.path.exists(file_path):
+            return f"File {file_path} does not exist."
         
-    def _generate_solutions(self, analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate potential solutions for identified issues.
-        
-        Args:
-            analysis: Log analysis results
+        with open(file_path, 'r') as f:
+            file_content = f.read()
+            return file_content
             
-        Returns:
-            List of potential solutions
-        """
-        solutions = []
         
-        for error in analysis.get("errors", []):
-            solution = {
-                "error_type": error["type"],
-                "error_message": error["message"],
-                "potential_causes": self._identify_causes(error),
-                "suggested_actions": self._suggest_actions(error)
-            }
-            solutions.append(solution)
-            
-        return solutions
-        
-    def _identify_causes(self, error: Dict[str, Any]) -> List[str]:
-        """Identify potential causes for an error.
-        
-        Args:
-            error: Error information
-            
-        Returns:
-            List of potential causes
-        """
-        # This would use the agent's knowledge to identify likely causes
-        # For now, return a simple example
-        return [
-            f"Potential cause 1 for {error['type']}",
-            f"Potential cause 2 for {error['type']}"
-        ]
-        
-    def _suggest_actions(self, error: Dict[str, Any]) -> List[str]:
-        """Suggest actions to resolve an error.
-        
-        Args:
-            error: Error information
-            
-        Returns:
-            List of suggested actions
-        """
-        # This would use the agent's knowledge to suggest actions
-        # For now, return a simple example
-        return [
-            f"Suggested action 1 for {error['type']}",
-            f"Suggested action 2 for {error['type']}"
-        ]
-        
-    def _generate_summary(self, analysis: Dict[str, Any], solutions: List[Dict[str, Any]]) -> str:
-        """Generate a summary of the analysis and solutions.
-        
-        Args:
-            analysis: Log analysis results
-            solutions: Generated solutions
-            
-        Returns:
-            str: Summary of findings and solutions
-        """
-        summary = "Log Analysis Summary:\n\n"
-        
-        # Add error statistics
-        summary += "Error Statistics:\n"
-        for error_type, count in analysis.get("error_counts", {}).items():
-            summary += f"- {error_type}: {count} occurrences\n"
-            
-        # Add top issues and solutions
-        summary += "\nTop Issues and Solutions:\n"
-        for solution in solutions[:3]:  # Top 3 issues
-            summary += f"\nIssue: {solution['error_message']}\n"
-            summary += "Suggested Actions:\n"
-            for action in solution['suggested_actions']:
-                summary += f"- {action}\n"
-                
-        return summary

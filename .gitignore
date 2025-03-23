@@ -33,9 +33,9 @@ ENV/
 
 # Environment variables
 .env
+.venv/
 
 # Logs
-*.log
 logs/
 
 # Test cache

@@ -1,7 +1,17 @@
 from dotenv import load_dotenv
-from agents import PromptAgent, TriageAgent, ResearchAgent, DebugAgent
 import logging
 from typing import Dict, Any
+import os
+import time
+from autogen_agentchat.conditions import HandoffTermination, TextMentionTermination
+from autogen_agentchat.messages import HandoffMessage
+from autogen_agentchat.teams import Swarm
+from autogen_agentchat.ui import Console
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+from agents.triage_agent import TriageAgent
+from agents.research_agent import ResearchAgent
+from agents.debug_agent import DebugAgent
 
 # Load environment variables
 load_dotenv()
@@ -19,19 +29,23 @@ class MultiAgentSystem:
     def __init__(self):
         """Initialize the multi-agent system with all required agents."""
         # Initialize agents
-        self.prompt_agent = PromptAgent()
-        self.triage_agent = TriageAgent()
-        self.research_agent = ResearchAgent()
-        self.debug_agent = DebugAgent()
-        
+        model_client = OpenAIChatCompletionClient(
+            model="gpt-4o",
+            api_key=os.getenv("OPENAI_API_KEY"),
+        )
+
+        self.triage_agent = TriageAgent(model_client=model_client, handoffs=["Debugger", "Researcher"])
+        self.research_agent = ResearchAgent(model_client=model_client, handoffs=["Triage"])
+        self.debug_agent = DebugAgent(model_client=model_client, handoffs=["Triage"])
+
         # Set up agent communication
-        self.triage_agent.setup_group_chat({
-            "prompt": self.prompt_agent,
-            "researcher": self.research_agent,
-            "debugger": self.debug_agent
-        })
+        termination = TextMentionTermination("TERMINATE")
+        self.swarm = Swarm(
+            participants=[self.triage_agent, self.research_agent, self.debug_agent], 
+            termination_condition=termination
+        )
         
-    def process_query(self, query: str) -> Dict[str, Any]:
+    async def process_query(self, query: str) -> Dict[str, Any]:
         """Process a user query through the agent system.
         
         Args:
@@ -41,44 +55,34 @@ class MultiAgentSystem:
             Dict containing the processed results
         """
         try:
-            # Step 1: Analyze query with Prompt Agent
-            logger.info(f"Analyzing query: {query}")
-            analysis = self.prompt_agent.process_message(query)
+            print("Querying...")
+            task_result = await Console(self.swarm.run_stream(task=query))
+            last_message = task_result.messages[-1]
             
-            # Step 2: Triage and delegate to specialized agents
-            logger.info(f"Triaging query of type: {analysis['task_type']}")
-            results = self.triage_agent.process_message(analysis)
+            # while isinstance(last_message, HandoffMessage) and last_message.target == "user":
+            #     user_message = input("User: ")
+
+            #     task_result = await Console(
+            #         self.swarm.run_stream(task=HandoffMessage(source="user", target=last_message.source, content=user_message))
+            #     )
+            #     last_message = task_result.messages[-1]
             
-            return {
-                "query": query,
-                "analysis": analysis,
-                "results": results
-            }
-            
+            return last_message.content
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
-            return {
-                "error": str(e),
-                "query": query
-            }
+            return str(e)
 
-def main():
+async def main():
     """Main entry point for the application."""
     # Initialize the system
     system = MultiAgentSystem()
     
     # Example usage
-    query = "Find any error logs from last week related to authentication"
-    result = system.process_query(query)
-    
-    # Print results
-    if "error" in result:
-        print(f"Error: {result['error']}")
-    else:
-        print("\nQuery Analysis:")
-        print(f"Type: {result['analysis']['task_type']}")
-        print("\nResults:")
-        print(result['results'])
+    query = "read section 5 of /home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf and find information about fuel/energy source"
+    result = await system.process_query(query)
+    logger.info("Query finished")
+    print(result)
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

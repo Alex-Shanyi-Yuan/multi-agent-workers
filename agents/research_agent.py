@@ -1,154 +1,184 @@
-from typing import Dict, Any, List
-from .base_agent import BaseAgent
+from typing import Dict, Any, List, Optional
 import os
-from processors.confluence import ConfluenceProcessor
-from processors.pdf_processor import PDFProcessor
-from processors.docx_processor import DocxProcessor
+from pathlib import Path
+
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+from .base_agent import BaseAgent
+
+import PyPDF2
+import docx
+from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class ResearchAgent(BaseAgent):
     """Agent responsible for searching through documents and finding relevant information."""
     
-    def __init__(self):
-        system_message = """You are a Research Agent responsible for:
-        1. Searching through various document sources (Confluence, PDFs, Word docs)
-        2. Finding relevant information based on queries
-        3. Summarizing and extracting key information
-        4. Providing source references for found information
+    def __init__(self,
+        model_client: Optional[OpenAIChatCompletionClient],
+        handoffs: List[str],
+    ):
+        system_message = """
+            You are the **Knowledge Retrieval Agent**. Your role is to fetch data from Confluence, PDFs, or Word docs.
+
+            **Policies**:
+            1. Never invent information - respond "No relevant documents found" if unsure.
+
+            **Steps**:
+            1. Receive the query.
+            2. Identify the files that may contain information using `get_avalible_files`.
+            3. Identify type of document (PDF, Word).
+            4. Get the content by calling `extract_text`.
+            5. Summarize findings and cite sources.
+            6. Use TERMINATE when reaseaching is complete.
+
+            **Notes**:
+            - Use `request_document_access` if files are restricted.
+            - Flag outdated documents with `flag_obsolete_content`.
         """
         
         super().__init__(
             name="Researcher",
-            system_message=system_message
+            system_message=system_message,
+            model_client=model_client,
+            handoffs=handoffs,
+            tools=[
+                self.extract_pdf_text,
+                self.extract_docx_text,
+                self.get_available_files,
+                # self.confluence.search,
+            ]
         )
-        
-        # Initialize document processors
-        self.confluence = ConfluenceProcessor()
-        self.pdf_processor = PDFProcessor()
-        self.docx_processor = DocxProcessor()
-        
-    def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a search query across all document sources.
+
+    def get_available_files(self) -> List[str]:
+        """Get a list of available files."""
+
+        assets_folder = os.path.join(os.path.dirname(__file__), '../', 'assets')
+        files = [os.path.join(assets_folder, file) for file in os.listdir(assets_folder)]
+        return files
+
+    def _get_pdf_content(
+        self,
+        pdf_path: Path,
+    ) -> Optional[Dict[str, Any]]:
+        """Get PDF content by extraction.
         
         Args:
-            message: The search query and task details
+            pdf_path: Path to PDF file
             
         Returns:
-            Dict containing search results from all sources
+            Dict containing PDF content and metadata
         """
-        # Extract PDF content
         try:
-            query = message.get('query', '')
-            pdf_path = query.split('/assets/')[1].split(' ')[0]
-            pdf_path = os.path.join('/home/alex-shanyi-yuan/multi-agent-workers/assets', pdf_path)
-            
-            # Extract text from the PDF
-            content = self.pdf_processor.extract_text(pdf_path)
-            if not content:
-                return {
-                    "error": "Could not extract text from PDF"
-                }
-            
-            # Find sections 5 and 9
-            sections = {}
-            current_section = None
-            section_text = ""
-            
-            for page in content['pages']:
-                text = page['text']
-                lines = text.split('\n')
+            with open(pdf_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
                 
-                for line in lines:
-                    if 'Section 5' in line or 'Section 9' in line:
-                        if current_section:
-                            sections[current_section] = section_text.strip()
-                        current_section = line.strip()
-                        section_text = ""
-                    elif current_section:
-                        section_text += line + "\n"
+                content = {
+                    "pages": [],
+                    "metadata": reader.metadata,
+                    "page_count": len(reader.pages),
+                    "title": reader.metadata.get('/Title', pdf_path.name),
+                    "extracted_at": datetime.now().isoformat()
+                }
+                
+                for page_num, page in enumerate(reader.pages):
+                    try:
+                        text = page.extract_text()
+                        content["pages"].append({
+                            "page_number": page_num + 1,
+                            "text": text
+                        })
+                    except Exception as e:
+                        logger.warning(f"Error extracting text from page {page_num + 1}: {str(e)}")
+                        
+                return content
+                
+        except Exception as e:
+            logger.error(f"Error extracting content from {pdf_path}: {str(e)}")
+            return None
+    
+    def extract_pdf_text(
+        self,
+        pdf_path: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Extract all text from a PDF file.
+        
+        Args:
+            pdf_path: Path to PDF file
             
-            if current_section:
-                sections[current_section] = section_text.strip()
+        Returns:
+            Dict containing extracted text and metadata
+        """
+        return self._get_pdf_content(Path(pdf_path))
+    
+    def _get_docx_content(
+        self,
+        docx_path: Path,
+    ) -> Optional[Dict[str, Any]]:
+        """Get Word document content, either from cache or by extraction.
+        
+        Args:
+            docx_path: Path to Word document
+            use_cache: Whether to use cached content
             
-            return {
-                "query": query,
-                "sections": sections,
-                "summary": "Found sections: " + ", ".join(sections.keys())
+        Returns:
+            Dict containing document content and metadata
+        """
+        try:
+            doc = docx.Document(docx_path)
+            
+            # Extract text and metadata
+            content = {
+                "paragraphs": [],
+                "metadata": {
+                    "core_properties": {
+                        prop: str(value)
+                        for prop, value in doc.core_properties.__dict__.items()
+                        if not prop.startswith('_')
+                    }
+                },
+                "paragraph_count": len(doc.paragraphs),
+                "title": doc.core_properties.title or docx_path.name,
+                "extracted_at": datetime.now().isoformat()
             }
+            
+            # Extract text from each paragraph with style information
+            for i, para in enumerate(doc.paragraphs):
+                if para.text.strip():  # Skip empty paragraphs
+                    content["paragraphs"].append({
+                        "index": i,
+                        "text": para.text,
+                        "style": para.style.name,
+                        "level": para.style.base_style.name if para.style.base_style else None
+                    })
+                    
+            # Cache the content
+            with cache_file.open('w') as f:
+                json.dump(content, f)
+                
+            return content
             
         except Exception as e:
-            return {
-                "error": f"Error processing PDF: {str(e)}"
-            }
-        
-    def _search_confluence(self, query: str) -> List[Dict[str, Any]]:
-        """Search Confluence pages for relevant information.
-        
-        Args:
-            query: Search query
-            
-        Returns:
-            List of relevant Confluence pages and excerpts
-        """
-        return self.confluence.search(query)
-        
-    def _search_pdfs(self, query: str) -> List[Dict[str, Any]]:
-        """Search PDF documents for relevant information.
+            logger.error(f"Error extracting content from {docx_path}: {str(e)}")
+            return None
+
+    def extract_docx_text(
+        self,
+        docx_path: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Extract all text from a Word document.
         
         Args:
-            query: Search query
+            docx_path: Path to Word document
             
         Returns:
-            List of relevant PDF excerpts
+            Dict containing extracted text and metadata
         """
-        return self.pdf_processor.search(query)
-        
-    def _search_docx(self, query: str) -> List[Dict[str, Any]]:
-        """Search Word documents for relevant information.
-        
-        Args:
-            query: Search query
-            
-        Returns:
-            List of relevant Word document excerpts
-        """
-        return self.docx_processor.search(query)
-        
-    def _rank_results(self, results: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-        """Rank and sort results by relevance.
-        
-        Args:
-            results: Dictionary of results from different sources
-            
-        Returns:
-            List of ranked results
-        """
-        all_results = []
-        for source, source_results in results.items():
-            for result in source_results:
-                result["source_type"] = source
-                all_results.append(result)
-                
-        # Sort by relevance score (assuming each result has a 'score' field)
-        return sorted(all_results, key=lambda x: x.get("score", 0), reverse=True)
-        
-    def _generate_summary(self, ranked_results: List[Dict[str, Any]]) -> str:
-        """Generate a summary of the top results.
-        
-        Args:
-            ranked_results: List of ranked search results
-            
-        Returns:
-            str: Summary of top findings
-        """
-        if not ranked_results:
-            return "No relevant results found."
-            
-        # Take top 3 results for summary
-        top_results = ranked_results[:3]
-        
-        summary = "Top findings:\n\n"
-        for i, result in enumerate(top_results, 1):
-            summary += f"{i}. From {result['source_type']}: {result.get('title', 'Untitled')}\n"
-            summary += f"   Excerpt: {result.get('excerpt', 'No excerpt available')}\n\n"
-            
-        return summary
+        return self._get_docx_content(Path(docx_path))

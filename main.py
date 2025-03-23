@@ -78,10 +78,11 @@ async def main():
     system = MultiAgentSystem()
     
     # Example usage
-    query = "read section 5 of /home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf and find information about fuel/energy source"
+    # query = "read section 5 of /home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf and find information about fuel/energy source"
+    query = "read /home/alex-shanyi-yuan/multi-agent-workers/assets/Common_Illness.docx and find how to prevent flu"
     result = await system.process_query(query)
+    # print(system.research_agent.extract_pdf_text('/home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf'))
     logger.info("Query finished")
-    print(result)
 
 if __name__ == "__main__":
     import asyncio

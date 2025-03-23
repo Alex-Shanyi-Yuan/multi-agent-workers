@@ -118,23 +118,10 @@ class ResearchAgent(BaseAgent):
         """
         return self._get_pdf_content(Path(pdf_path))
     
-    def _get_docx_content(
-        self,
-        docx_path: Path,
-    ) -> Optional[Dict[str, Any]]:
-        """Get Word document content, either from cache or by extraction.
-        
-        Args:
-            docx_path: Path to Word document
-            use_cache: Whether to use cached content
-            
-        Returns:
-            Dict containing document content and metadata
-        """
+    def _get_docx_content(self, docx_path: Path) -> Optional[Dict[str, Any]]:
         try:
             doc = docx.Document(docx_path)
             
-            # Extract text and metadata
             content = {
                 "paragraphs": [],
                 "metadata": {
@@ -149,22 +136,17 @@ class ResearchAgent(BaseAgent):
                 "extracted_at": datetime.now().isoformat()
             }
             
-            # Extract text from each paragraph with style information
             for i, para in enumerate(doc.paragraphs):
-                if para.text.strip():  # Skip empty paragraphs
+                if para.text.strip():
                     content["paragraphs"].append({
                         "index": i,
                         "text": para.text,
                         "style": para.style.name,
                         "level": para.style.base_style.name if para.style.base_style else None
                     })
-                    
-            # Cache the content
-            with cache_file.open('w') as f:
-                json.dump(content, f)
-                
+                        
             return content
-            
+                
         except Exception as e:
             logger.error(f"Error extracting content from {docx_path}: {str(e)}")
             return None

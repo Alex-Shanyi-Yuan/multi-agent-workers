@@ -79,7 +79,8 @@ async def main():
     
     # Example usage
     # query = "read section 5 of /home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf and find information about fuel/energy source"
-    query = "read /home/alex-shanyi-yuan/multi-agent-workers/assets/Common_Illness.docx and find how to prevent flu"
+    # query = "read /home/alex-shanyi-yuan/multi-agent-workers/assets/Common_Illness.docx and find how to prevent flu"
+    query = "Can you help me debug /home/alex-shanyi-yuan/multi-agent-workers/assets/intro.log what is the error and how to resolve it?"
     result = await system.process_query(query)
     # print(system.research_agent.extract_pdf_text('/home/alex-shanyi-yuan/multi-agent-workers/assets/car_user_insturctions.pdf'))
     logger.info("Query finished")

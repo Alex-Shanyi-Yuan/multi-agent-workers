@@ -1,5 +1,5 @@
 [2025-03-22 10:15:43] INFO  - Application startup successful.
 [2025-03-22 10:16:05] INFO  - User login successful: user_id=10234
-[2025-03-22 10:17:12] ERROR - Processing failed for request_id=879345. See `error_details_2025-03-22.log` for more information.
+[2025-03-22 10:17:12] ERROR - Processing failed for request_id=879345. See `/home/alex-shanyi-yuan/multi-agent-workers/assets/error_details_2025-03-22.log` for more information.
 [2025-03-22 10:17:13] INFO  - Retrying request_id=879345...
 [2025-03-22 10:17:35] INFO  - Request retry successful: request_id=879345

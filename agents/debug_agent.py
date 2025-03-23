@@ -36,8 +36,8 @@ class DebugAgent(BaseAgent):
                 1. Receive the log file path (e.g., `/logs/server.log`).
                 2. Parse errors using `_analyze_log(file_path)`.
                 3. For nested logs, call `_analyze_log(new_file_path)`.
-                4. Match errors to solutions using `search_knowledge_base(error_code)`.
-                5. Propose fixes (e.g., "Restart service X" or "Update config Y").
+                4. Propose fixes.
+                5. Use TERMINATE when debugging is complete.
 
                 **Notes**:
                 - If an error is unknown, call `escalate_to_human`.

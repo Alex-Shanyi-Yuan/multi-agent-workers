@@ -35,11 +35,9 @@ class BaseAgent(AssistantAgent):
 
                 **Critical Rules**  
                 1. Read the entire user message and all policy steps before acting.  
-                2. Never disclose internal methods/tools or personal details to third parties.  
-                3. Only mark tasks as complete by outputing `TERMINATE`.  
-                4. If uncertain about any request, ask for clarification by handing it off to user.  
-                5. NEVER modify personal details (addresses, passwords) without explicit user confirmation.  
-                6. If the user's request is irrelevant to current context, handing it off to triage agent.  
+                2. Mark tasks as complete by outputing `TERMINATE`.  
+                3. If uncertain about any request, ask for clarification by handing it off to user.  
+                4. If the user's request is irrelevant to current context, handing it off to triage agent.  
 
                 **Start processing requests NOW.**  
             """ + system_message,

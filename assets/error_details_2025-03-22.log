@@ -1,0 +1,14 @@
+[2025-03-22 10:17:12] ERROR - Request processing failed.
+    Request ID: 879345
+    User ID: 10234
+    Module: Payment Processing
+    Error Code: 5001
+    Description: Failed to connect to the payment gateway.
+    Exception: TimeoutException
+    Stack Trace:
+        com.app.payment.PaymentGateway.connect(PaymentGateway.java:112)
+        com.app.payment.TransactionProcessor.process(TransactionProcessor.java:89)
+        com.app.main.RequestHandler.handle(RequestHandler.java:55)
+        com.app.server.ServerThread.run(ServerThread.java:102)
+
+[2025-03-22 10:17:12] DEBUG - Retrying connection to payment gateway...

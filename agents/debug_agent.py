@@ -40,8 +40,7 @@ class DebugAgent(BaseAgent):
                 5. Use TERMINATE when debugging is complete.
 
                 **Notes**:
-                - If an error is unknown, call `escalate_to_human`.
-                - Use `validate_solution_with_test` before finalizing responses.
+                - If an error is unknown, handoff to user
             """,
             tools=[
                 self._analyze_log,   
